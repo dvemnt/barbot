@@ -67,7 +67,7 @@ class Hero(object):
         self._id = int(self.session.cookies['id'])
         self._name = None
         self._side = None
-        self._spec = None
+        self._class = None
         self._level = None
 
         self.hp = None  # Health points.
@@ -88,7 +88,7 @@ class Hero(object):
         """
         Get information about hero.
 
-        :returns: `True` or `False` if have problems.
+        :returns: result bool.
         """
         response = self.get_user_page()
         page = html.fromstring(response.content)
@@ -260,18 +260,29 @@ class Towers(AbstractGame):
                 'new': url or False, # attack new enemy.
                 'last': url or False, # attack last enemy.
                 'tower': url or False, # attack tower.
-            }
+            },
+            'heal': {
+                'new': url or False, # heal new friend.
+                'last': url or False, # heal last friend.
+                'self': url or False, # heal self.
+            },
+            'burning': {
+                'new': url or False, # burning energy of new enemy.
+                'last': url of False, # burning energy of last enemy.
+            },
             'skills': [urls], # list urls of available skills.
             'move': {
-                'backward': [urls],
-                'forward': [urls],
-            }
+                'backward': [urls], # backward towers urls
+                'forward': [urls], # forward towers urls
+                'capital': url or False, # url to capital
+            },
         }
         """
-        # TODO: medic actions.
 
         actions = {
             'attack': {},
+            'heal': {},
+            'burning': {},
             'skills': [],
             'move': {
                 'backward': [],
@@ -281,14 +292,29 @@ class Towers(AbstractGame):
         }
         page = html.fromstring(self.response.content)
 
-        link = page.xpath('//a[contains(@href, "damageRandomEnemy")]/@href')
+        link = page.xpath('//a[contains(@href, "damageRandom")]/@href')
         actions['attack']['new'] = build_url(link[0]) if link else False
 
-        link = page.xpath('//a[contains(@href, "damageLastTarget")]/@href')
+        link = page.xpath('//a[contains(@href, "damageLast")]/@href')
         actions['attack']['last'] = build_url(link[0]) if link else False
 
         link = page.xpath('//a[contains(@href, "damageTower")]/@href')
         actions['attack']['tower'] = build_url(link[0]) if link else False
+
+        link = page.xpath('//a[contains(@href, "healRandom")]/@href')
+        actions['heal']['new'] = build_url(link[0]) if link else False
+
+        link = page.xpath('//a[contains(@href, "healLast")]/@href')
+        actions['heal']['last'] = build_url(link[0]) if link else False
+
+        link = page.xpath('//a[contains(@href, "healSelf")]/@href')
+        actions['heal']['self'] = build_url(link[0]) if link else False
+
+        link = page.xpath('//a[contains(@href, "energyDamageRandom")]/@href')
+        actions['burning']['new'] = build_url(link[0]) if link else False
+
+        link = page.xpath('//a[contains(@href, "energyDamageLast")]/@href')
+        actions['burning']['last'] = build_url(link[0]) if link else False
 
         links = page.xpath(
             '//a[contains(@href, "ability") '

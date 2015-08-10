@@ -6,13 +6,13 @@ import traceback
 
 import barbot
 from barbot.utils import log, battle_log
-from barbot.constants import HOST
+from barbot.constants import HOST, WARRIOR, MEDIC
 
 
 def main():
     """Main function."""
     bot = barbot.Interface('barbot.conf')
-    bot.change_game('tower')
+    bot.change_game('towers')
     try:
         game(bot)
     except:
@@ -44,10 +44,13 @@ def game(bot):
             log('Low health. Return to capital for resting...')
             bot.game.return_to_capital()
             time.sleep(25)
-            bot.entry()
+            bot.move(bot.get_actions()['move']['foreward'][0])
             continue
         else:
-            action = choice_action(actions)
+            if bot.hero._spec == WARRIOR:
+                action = choice_warrior_action(actions)
+            else:
+                action = choice_medic_action(actions)
             if action is None:
                 bot.entry()
                 continue
@@ -58,8 +61,8 @@ def game(bot):
         hp = bot.hero.hp
 
 
-def choice_action(actions):
-    """Choice the optimal action."""
+def choice_warrior_action(actions):
+    """Choice the optimal action for warrior."""
     action = None
 
     if actions['skills'] and any(actions['attack'].values()):
@@ -76,6 +79,36 @@ def choice_action(actions):
             action = random.choice(actions['move']['forward'])
         else:
             action = random.choice(actions['move']['backward'])
+    else:
+        bot.entry()
+
+    return action
+
+def choice_medic_action(actions):
+    """Choice the optimal action for medic."""
+    action = None
+
+    if actions['heal']:
+        if actions['heal']['self']:
+            action = actions['heal']['self']
+        elif actions['heal']['last']:
+            action = actions['heal']['last']
+        else:
+            action = actions['heal']['new']
+    elif actions['skills'] and any(actions['burning'].values()):
+        action = actions['skills'][0]
+    elif actions['burning']:
+        if actions['burning']['last']:
+            action = actions['burning']['last']
+        else:
+            action = actions['burning']['new']
+    elif actions['move']:
+        if actions['move']['forward']:
+            action = random.choice(actions['move']['forward'])
+        else:
+            action = random.choice(actions['move']['backward'])
+    else:
+        bot.entry()
 
     return action
 
