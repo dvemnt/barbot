@@ -1,5 +1,9 @@
-# -*- coding: utf-8 -*-
+# coding=utf-8
 
-HOST = 'http://barbars.ru/'
-WARRIOR = 'воин'
-MEDIC = 'медик'
+HOST = u'http://barbars.ru/'
+
+WARRIOR = u'воин'
+MEDIC = u'медик'
+
+NORTH = u'север'
+SOUTH = u'юг'

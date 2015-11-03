@@ -1,55 +1,92 @@
-# -*- coding: utf-8 -*-
+# coding=utf-8
+
+import importlib
 
 import configobj
 from lxml import html
 import requests
-from fake_useragent import UserAgent
+import randua
 
-from .utils import clean, build_url, log
-from .constants import HOST
-from .exceptions import (
-    AuthenticationError, GameError, ConfigurationError
-)
+from . import utils, logger, decorators, constants
+
+
+class Settings(object):
+
+    """Class for keep settings from configuration file."""
+
+    def __init__(self, filename):
+        """
+        Initialization class.
+
+        :param filename: path to configuration file.
+        """
+        self._filename = filename
+        self._configuration = self._get_configuration(filename)
+
+    def __getattr__(self, attr):
+        try:
+            return self.__dict__[attr]
+        except KeyError:
+            return self._configuration[attr]
+
+    @staticmethod
+    def _get_configuration(filename):
+        """
+        Get settings from configuration file.
+
+        :param filename: path to configuration file.
+        :returns: `dict` of settings.
+        """
+        template = {
+            'account': {
+                'username': 'string',
+                'password': 'string',
+            },
+        }
+        return configobj.ConfigObj(filename, configspec=template)
 
 
 class Account(object):
 
     """Class for actions with user data."""
 
-    def __init__(self, config=None):
+    def __init__(self, username, password):
         """
         Initialization class.
 
         :param username: Username on barbars.ru.
         :param password: Password on barbars.ru.
-        :param config: dictionary with authentication parameters.
         """
-        try:
-            self._config = config
-            self._username = self._config['account']['username']
-            self._password = self._config['account']['password']
-        except:
-            raise ConfigurationError('Not username or password.')
+        self._username = username
+        self._password = password
 
-        self.is_authenticated = False
-        self.session = requests.Session()
-        self.session.headers.update({'User-Agent': UserAgent().random})
+        self._session = requests.Session()
+        self._session.headers.update({'User-Agent': randua.generate()})
 
     def authentication(self):
         """
         Authentication user on barbars.ru.
 
-        :returns: `requests` Session class with authentication or `False`.
+        :returns: `requests.Session` instance with authentication or False.
         """
-        url = build_url(
-            'login/wicket:interface/:7:loginForm::IFormSubmitListener::')
+        url = utils.build_url(
+            'login/wicket:interface/:8:loginForm::IFormSubmitListener::'
+        )
         data = {'login': self._username, 'password': self._password}
 
-        response = self.session.post(url, data=data)
-        if response.status_code == 404:  # Yes, it's strange.
-            self.is_authenticated = True
-            return self.session
-        return False
+        self._session.post(url, data=data)
+
+        return self._session
+
+    @property
+    def is_authenticated(self):
+        """
+        Check authentication on barbars.ru.
+
+        :returns: `bool`.
+        """
+        response = self._session.get(utils.build_url('user'))
+        return response.url == utils.build_url('user')
 
 
 class Hero(object):
@@ -60,11 +97,11 @@ class Hero(object):
         """
         Initialization class.
 
-        :param session: `requests` Session class with authentication.
+        :param session: `requests.Session` instance with authentication.
         """
-        self.session = session
+        self._session = session
 
-        self._id = int(self.session.cookies['id'])
+        self._id = int(self._session.cookies['id'])
         self._name = None
         self._side = None
         self._class = None
@@ -76,50 +113,49 @@ class Hero(object):
         self.captcha = None
         self.tire = None
 
-    def get_user_page(self):
+    def _get_hero_page(self):
         """
         Get user page.
 
-        :returns: `requests` response.
+        :returns: `lxml.html` instance.
         """
-        return self.session.get(build_url('user'))
+        return html.fromstring(
+            self._session.get(utils.build_url('user')).content
+        )
 
-    def get_information(self):
+    def _update_information(self):
         """
-        Get information about hero.
+        Update information about hero.
 
-        :returns: result bool.
+        :returns: `bool`.
         """
-        response = self.get_user_page()
-        page = html.fromstring(response.content)
+        page = self._get_hero_page()
 
-        blocks = page.xpath(
-            '//*[contains(img/@src, "blue_") or contains(img/@src, "red_")] \
-            //span/text()')
-        blocks = [clean(block, 0) for block in blocks]
-        try:
-            self._name = blocks[0]
-            self._level = int(blocks[1])
-            self._spec = blocks[2]
-            self._side = blocks[3]
-        except:
-            return False
+        blocks = page.xpath((
+            '//*[contains(img/@src, "blue_") or contains(img/@src, "red_")]'
+            '//span/text()'
+        ))
+        blocks = [utils.remove_spaces(block, 0) for block in blocks]
+
+        self._name = blocks[0]
+        self._level = int(blocks[1])
+        self._class = blocks[2]
+        self._side = blocks[3]
+
         return True
 
-    def get_status(self, response):
+    def _update_status(self, page):
         """
         Get health and energy points.
 
-        :param response: `requests` response.
-        :returns: bool.
+        :param page: `lxml.html` instance.
+        :returns: `bool`.
         """
-        page = html.fromstring(response.content)
         blocks = page.xpath('//*[contains(img/@src, "life")]/span/text()')
-        try:
-            self.hp = int(blocks[0])
-            self.ep = int(blocks[1])
-        except:
-            return False
+
+        self.hp = int(blocks[0])
+        self.ep = int(blocks[1])
+
         return True
 
     def repair_equipment(self, check=False):
@@ -129,8 +165,8 @@ class Hero(object):
         :param check: check instead of repair.
         :returns: `True` if need repair or repaired else `False`.
         """
-        url = build_url('user/body/id/{}'.format(self._id))
-        response = self.session.get(url)
+        url = utils.build_url('user/body/id/{}'.format(self._id))
+        response = self._session.get(url)
         page = html.fromstring(response.content)
 
         link = page.xpath('//a[contains(@href, "repairLink")]/@href')
@@ -138,330 +174,115 @@ class Hero(object):
             return bool(link)
 
         if link:
-            self.session.get(build_url(link[0]))
+            self._session.get(utils.build_url(link[0]))
             return True
         return False
 
-    def check_tire(self):
+    @property
+    def is_tired(self):
         """
         Check tire of hero.
 
-        :returns: bool.
+        :returns: `bool`.
         """
-        response = self.get_user_page()
-        page = html.fromstring(response.content)
+        page = self._get_hero_page()
         link = page.xpath('//a[contains(@href, "tire")]')
+
         if not link:
             return False
         return True
 
 
-class AbstractGame(object):
+class Bot(object):
 
-    """
-    Abstract game class.
+    """Bot interface class."""
 
-    Class comprises a set of basic functions to connect to a common interface.
-    """
-
-    def __init__(self, session):
+    def __init__(self, filename):
         """
         Initialization class.
 
-        :param session: `requests` Session class with authentication.
+        :param filename: path to configuration file.
         """
-        self._session = session
-        self.response = None
+        self._settings = Settings(filename)
 
-    def entry(self):
-        """
-        Enter to game.
+        self._account = Account(
+            self._settings.account['username'],
+            self._settings.account['password']
+        )
 
-        :returns: url for entry.
-        """
-        raise NotImplementedError('Need override this function.')
+        logger.info('Authentication.')
 
-    def get_actions(self):
-        """
-        Get available actions.
+        self._account.authentication()
+        if not self._account.is_authenticated:
+            logger.info('Incorrect login or password.')
+            exit()
 
-        :returns: dict of actions.
-        """
-        raise NotImplementedError('Need override this function.')
-
-    def move(self, url):
-        """
-        Change location or attack and save response.
-
-        :returns: response.
-        """
-        raise NotImplementedError('Need override this function.')
-
-    def get_log(self):
-        """
-        Getting last line from log with hero action.
-
-        :returns: string of log.
-        """
-        raise NotImplementedError('Need override this function.')
-
-
-class Towers(AbstractGame):
-
-    """Towers game."""
-
-    def __init__(self, session):
-        """
-        Initialization class.
-
-        :param session: `requests` Session class with authentication.
-        """
-        self.session = session
-        self.response = None
-
-        self._capital = None
-        self.tower = None
-        self.location = None
-
-    def entry(self):
-        """
-        Enter to tower.
-
-        :returns: `requests` response.
-        """
-        self.session.get(HOST)
-        response = self.session.get(build_url('game/towers'))
-        page = html.fromstring(response.content)
-
-        self._capital = clean(page.xpath('//h1/span/text()')[0])
-        tower_link = page.xpath('//a[contains(@href, "nearLocation")]')[0]
-        self.tower = clean(tower_link.xpath('span/text()')[0])
-
-        return self.move(build_url(tower_link.xpath('@href')[0]))
-
-    def move(self, url):
-        """
-        Change location or attack and save response.
-
-        :returns: response.
-        """
-        self.response = self.session.get(url)
-        page = html.fromstring(self.response.content)
-        self.location = clean(page.xpath('//h1/span/text()')[0])
-        return self.response
-
-    def get_actions(self):
-        """
-        Get available actions.
-
-        :returns: dict of actions.
-        {
-            'attack': {
-                'new': url or False, # attack new enemy.
-                'last': url or False, # attack last enemy.
-                'tower': url or False, # attack tower.
-            },
-            'heal': {
-                'new': url or False, # heal new friend.
-                'last': url or False, # heal last friend.
-                'self': url or False, # heal self.
-            },
-            'burning': {
-                'new': url or False, # burning energy of new enemy.
-                'last': url of False, # burning energy of last enemy.
-            },
-            'skills': [urls], # list urls of available skills.
-            'move': {
-                'backward': [urls], # backward towers urls
-                'forward': [urls], # forward towers urls
-                'capital': url or False, # url to capital
-            },
-        }
-        """
-
-        actions = {
-            'attack': {},
-            'heal': {},
-            'burning': {},
-            'skills': [],
-            'move': {
-                'backward': [],
-                'forward': [],
-                'capital': False,
-            },
-        }
-        page = html.fromstring(self.response.content)
-
-        link = page.xpath('//a[contains(@href, "damageRandom")]/@href')
-        actions['attack']['new'] = build_url(link[0]) if link else False
-
-        link = page.xpath('//a[contains(@href, "damageLast")]/@href')
-        actions['attack']['last'] = build_url(link[0]) if link else False
-
-        link = page.xpath('//a[contains(@href, "damageTower")]/@href')
-        actions['attack']['tower'] = build_url(link[0]) if link else False
-
-        link = page.xpath('//a[contains(@href, "healRandom")]/@href')
-        actions['heal']['new'] = build_url(link[0]) if link else False
-
-        link = page.xpath('//a[contains(@href, "healLast")]/@href')
-        actions['heal']['last'] = build_url(link[0]) if link else False
-
-        link = page.xpath('//a[contains(@href, "healSelf")]/@href')
-        actions['heal']['self'] = build_url(link[0]) if link else False
-
-        link = page.xpath('//a[contains(@href, "energyDamageRandom")]/@href')
-        actions['burning']['new'] = build_url(link[0]) if link else False
-
-        link = page.xpath('//a[contains(@href, "energyDamageLast")]/@href')
-        actions['burning']['last'] = build_url(link[0]) if link else False
-
-        links = page.xpath(
-            '//a[contains(@href, "ability") '
-            'and not(contains(@class, "buff"))]/@href')
-        actions['skills'] = [build_url(skill_link) for skill_link in links]
-
-        links = page.xpath('//a[contains(@href, "location")]')
-        if '-n' in links[0].xpath('img/@src')[0]:
-            backward = '-n'
-        elif '-s' in links[0].xpath('img/@src')[0]:
-            backward = '-s'
-        for link in links:
-            if clean(link.xpath('span/text()')[0]) == self._capital:
-                actions['move']['capital'] = build_url(link.xpath('@href')[0])
-                continue
-            href = link.xpath('@href')[0]
-            if backward in link.xpath('img/@src')[0]:
-                actions['move']['backward'].append(build_url(href))
-            else:
-                actions['move']['forward'].append(build_url(href))
-        return actions
-
-    def get_log(self):
-        """
-        Getting last line from game log.
-
-        :returns: string of log.
-        """
-        page = html.fromstring(self.response.content)
-        log = page.xpath('//div[contains(text(), "Ты")][1]//text()')
-        return clean(''.join(log))
-
-    def return_to_capital(self, force=False):
-        """
-        Return hero to the capital.
-
-        :param force: force return to the capital with exit from towers.
-        :returns: bool result.
-        """
-        if force:
-            self.session.get(HOST)
-            self.move(build_url('game/towers'))
-            return True
-
-        while self.location != self._capital:
-            actions = self.get_actions()
-            try:
-                if not actions['move']['capital']:
-                    self.move(actions['move']['backward'][0])
-                else:
-                    self.move(actions['move']['capital'])
-            except:
-                return False
-        return True
-
-
-class Interface(object):
-
-    """Wrapper for units."""
-
-    def __init__(self, config=None):
-        """
-        Initialization interface and need class.
-
-        :param config: path to configuration file.
-        """
-        if config is None:
-            raise ConfigurationError('Need path to configuration file.')
-        self._config = configobj.ConfigObj(config)
-
-        self.account = Account(config=self._config)
-        log('Authentication...')
-        if not self.account.authentication():
-            raise AuthenticationError('Incorrect login or password.')
-        self._session = self.account.session
+        self._session = self._account._session
 
         self.hero = Hero(session=self._session)
-        log('Getting information about the hero...')
-        if not self.hero.get_information():
-            raise ConfigurationError('Impossible get information about hero.')
 
-        self.towers = Towers(session=self._session)
+        logger.info('Getting information about the hero...')
+
+        self.hero._update_information()
 
         self._game = None
 
-        log('Ready to game.')
-
-    def change_game(self, game):
+    def change_game(self, name):
         """
         Change game mode.
 
-        Available game modes: `tower`.
+        Available game modes: `towers`.
 
-        :param game: name of game mode.
+        :param name: name of game mode.
         :returns: True if successfuly changed.
         """
-        if getattr(self, game, None) is not None:
-            self._game = game
-            return True
-        raise GameError('No available game with such name.')
+        try:
+            module = importlib.import_module('barbot.games.{}'.format(name))
+            self._game = module.GAME(self._session)
+        except (ImportError, AttributeError):
+            logger.info('No available game named {}.'.format(name))
+            exit()
 
-    @property
-    def game(self):
-        """
-        Get current game.
-
-        :returns: game class or None.
-        """
-        return getattr(self, self._game, None)
-
+    @decorators.game
     def entry(self):
         """
         Enter to current game.
 
-        :returns: url to enter in game.
+        :returns: `lxml.html` instance.
         """
-        if self.game is None:
-            raise GameError('No current game.')
-        return self.game.entry()
+        return self._game.entry()
 
+    @decorators.game
     def get_actions(self):
         """
-        Get actions in current game.
+        Get actions from current game.
 
-        :returns: dict of actions.
+        :returns: `dict` of actions.
         """
-        if self.game is None:
-            raise GameError('No current game.')
-        return self.game.get_actions()
+        return self._game.get_actions()
 
+    @decorators.game
     def move(self, action):
         """
         Action in current game.
 
-        :param action: action url.
-        :returns: `requests` response.
+        :param action: `str` action url.
+        :returns: `lxml.html` instance.
         """
-        if self.game is None:
-            raise GameError('No current game.')
-        return self.game.move(action)
+        return self._game.move(action)
 
-    def get_log(self):
+    @decorators.game
+    def get_action_log(self):
         """
-        Get last string of log from current game.
+        Get last string of utils.log from current game.
 
-        :returns: string of log.
+        :returns: string of utils.log.
         """
-        if self.game is None:
-            raise GameError('No current game.')
-        return self.game.get_log()
+        template = u'HP: {} | EP: {} | {}'
+        return template.format(
+            self.hero.hp, self.hero.ep, self._game.get_action_log()
+        )
+
+    def leave_game(self):
+        """Leave game."""
+        self._session.get(constants.HOST)

@@ -1,0 +1,6 @@
+.git
+*.py[codw]
+__pycache__/
+dist
+build/
+barbot.egg-info/

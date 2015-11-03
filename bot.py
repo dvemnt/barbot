@@ -1,36 +1,38 @@
-# -*- coding: utf-8 -*-
+# coding=utf-8
 
 import time
 import random
 import traceback
 
-import barbot
-from barbot.utils import log, battle_log
-from barbot.constants import HOST, WARRIOR, MEDIC
+from barbot import constants, logger, barbot
 
 
 def main():
     """Main function."""
-    bot = barbot.Interface('barbot.conf')
+    bot = barbot.Bot('barbot.conf')
     bot.change_game('towers')
     try:
         game(bot)
     except:
         print(traceback.format_exc())
-        log('Close bot.')
-        bot._session.get(HOST)  # leave battle
-        exit
+        logger.info('Close bot.')
+        bot.leave_game()
+        exit()
 
 
 def game(bot):
     """Start and contol current game."""
-    log('Enter to towers...')
+    logger.info('Enter to towers.')
+
     bot.entry()
-    log('Tower: {}'.format(bot.game.tower))
-    bot.hero.get_status(bot.game.response)
+
+    logger.info(u'Tower: {}'.format(bot._game._tower))
+
+    bot.hero._update_status(bot._game._page)
     hp = bot.hero.hp
-    while bot.hero.check_tire:
-        bot.hero.get_status(bot.game.response)
+
+    while not bot.hero.is_tired:
+        bot.hero._update_status(bot._game._page)
         actions = bot.get_actions()
         if bot.hero.hp < hp:
             if actions['move']['forward']:
@@ -40,31 +42,25 @@ def game(bot):
             else:
                 bot.entry()
                 continue
-        elif bot.hero.hp <= 1000:
-            log('Low health. Return to capital for resting...')
-            bot.game.return_to_capital()
-            time.sleep(25)
-            bot.move(bot.get_actions()['move']['foreward'][0])
-            continue
         else:
-            if bot.hero._spec == WARRIOR:
+            if bot.hero._class == constants.WARRIOR:
                 action = choice_warrior_action(actions)
             else:
                 action = choice_medic_action(actions)
+
             if action is None:
                 bot.entry()
                 continue
-        time.sleep(random.randint(4, 7))
+
         bot.move(action)
-        battle_log(bot)
+        logger.info(bot.get_action_log())
         print('=' * 60)
         hp = bot.hero.hp
+        time.sleep(random.randint(4, 7))
 
 
 def choice_warrior_action(actions):
     """Choice the optimal action for warrior."""
-    action = None
-
     if actions['skills'] and any(actions['attack'].values()):
         action = actions['skills'][0]
     elif actions['attack']:
@@ -73,21 +69,20 @@ def choice_warrior_action(actions):
         elif actions['attack']['last']:
             action = actions['attack']['last']
         else:
-            action = actions['attack']['new']
+            action = actions['attack']['random']
     elif actions['move']:
         if actions['move']['forward']:
             action = random.choice(actions['move']['forward'])
         else:
             action = random.choice(actions['move']['backward'])
     else:
-        bot.entry()
+        action = None
 
     return action
 
+
 def choice_medic_action(actions):
     """Choice the optimal action for medic."""
-    action = None
-
     if actions['heal']:
         if actions['heal']['self']:
             action = actions['heal']['self']
@@ -101,14 +96,14 @@ def choice_medic_action(actions):
         if actions['burning']['last']:
             action = actions['burning']['last']
         else:
-            action = actions['burning']['new']
+            action = actions['burning']['random']
     elif actions['move']:
         if actions['move']['forward']:
             action = random.choice(actions['move']['forward'])
         else:
             action = random.choice(actions['move']['backward'])
     else:
-        bot.entry()
+        action = None
 
     return action
 
