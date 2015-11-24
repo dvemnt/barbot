@@ -18,13 +18,13 @@ class SettingsTests(unittest.TestCase):
 
     def test_get_configuration(self):
         """Testing get configuration."""
-        configuration = self.settings._get_configuration(CONFIG_PATH)
+        configuration = self.settings._get_from_file(CONFIG_PATH)
         self.assertIn('username', configuration['account'])
         self.assertIn('password', configuration['account'])
 
     def test_get_setting(self):
         """Testing get setting."""
-        self.assertIsInstance(self.settings.account['username'], str)
+        self.assertIsInstance(self.settings.account.username, str)
 
 
 class AccountTests(unittest.TestCase):
@@ -39,9 +39,9 @@ class AccountTests(unittest.TestCase):
         username and password in it to pass tests.
         """
         settings = barbot.Settings(CONFIG_PATH)
-        username = settings.account['username']
-        password = settings.account['password']
-        self.account = barbot.Account(username, password)
+        self.account = barbot.Account(
+            settings.account.username, settings.account.password
+        )
 
     def tearDown(self):
         """Close and clear."""
@@ -69,8 +69,8 @@ class HeroTests(unittest.TestCase):
         username and password in it to pass tests.
         """
         self.settings = barbot.Settings(CONFIG_PATH)
-        username = self.settings.account['username']
-        password = self.settings.account['password']
+        username = self.settings.account.username
+        password = self.settings.account.password
         account = barbot.Account(username, password)
         session = account.authentication()
         self.hero = barbot.Hero(session=session)
@@ -82,7 +82,7 @@ class HeroTests(unittest.TestCase):
     def test_get_information(self):
         """Test getting information about hero."""
         self.hero._update_information()
-        self.assertEqual(self.hero._name, self.settings.account['username'])
+        self.assertEqual(self.hero._name, self.settings.account.username)
         self.assertIn(self.hero._side, (constants.NORTH, constants.SOUTH))
         self.assertIn(self.hero._class, (constants.WARRIOR, constants.MEDIC))
         self.assertIsInstance(self.hero._level, int)
@@ -115,8 +115,8 @@ class TowersTests(unittest.TestCase):
         username and password in it to pass tests.
         """
         self.settings = barbot.Settings(CONFIG_PATH)
-        username = self.settings.account['username']
-        password = self.settings.account['password']
+        username = self.settings.account.username
+        password = self.settings.account.password
         account = barbot.Account(username, password)
         session = account.authentication()
         self.towers = towers.Towers(session=session)

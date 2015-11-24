@@ -6,7 +6,7 @@ try:
 except ImportError:
     from distutils.core import setup
 
-VERSION = '1.2.1'
+VERSION = '1.2.2'
 
 here = path.abspath(path.dirname(__file__))
 
@@ -17,9 +17,10 @@ packages = [
 requires = [
     'configobj',
     'lxml',
-    'nose',
     'randua',
-    'requests'
+    'requests',
+    'dotmap',
+    'urltools'
 ]
 
 with open(path.join(here, 'README.rst')) as f:

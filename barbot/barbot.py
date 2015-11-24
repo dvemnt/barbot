@@ -6,6 +6,7 @@ import configobj
 from lxml import html
 import requests
 import randua
+import dotmap
 
 from . import utils, logger, decorators, constants
 
@@ -21,29 +22,23 @@ class Settings(object):
         :param filename: path to configuration file.
         """
         self._filename = filename
-        self._configuration = self._get_configuration(filename)
+        self._configuration = dotmap.DotMap(self._get_from_file(filename))
 
     def __getattr__(self, attr):
         try:
             return self.__dict__[attr]
         except KeyError:
-            return self._configuration[attr]
+            return getattr(self._configuration, attr)
 
     @staticmethod
-    def _get_configuration(filename):
+    def _get_from_file(filename, configspec=utils.get_configspec()):
         """
         Get settings from configuration file.
 
         :param filename: path to configuration file.
         :returns: `dict` of settings.
         """
-        template = {
-            'account': {
-                'username': 'string',
-                'password': 'string',
-            },
-        }
-        return configobj.ConfigObj(filename, configspec=template)
+        return configobj.ConfigObj(filename, configspec=configspec).dict()
 
 
 class Account(object):
@@ -67,7 +62,7 @@ class Account(object):
         """
         Authentication user on barbars.ru.
 
-        :returns: `requests.Session` instance with authentication or False.
+        :returns: `requests.Session` instance with authentication.
         """
         url = utils.build_url(
             'login/wicket:interface/:8:loginForm::IFormSubmitListener::'
@@ -109,9 +104,6 @@ class Hero(object):
 
         self.hp = None  # Health points.
         self.ep = None  # Energy points.
-
-        self.captcha = None
-        self.tire = None
 
     def _get_hero_page(self):
         """
@@ -188,9 +180,7 @@ class Hero(object):
         page = self._get_hero_page()
         link = page.xpath('//a[contains(@href, "tire")]')
 
-        if not link:
-            return False
-        return True
+        return bool(link)
 
 
 class Bot(object):
@@ -204,13 +194,13 @@ class Bot(object):
         :param filename: path to configuration file.
         """
         self._settings = Settings(filename)
+        print(self._settings._configuration)
 
         self._account = Account(
-            self._settings.account['username'],
-            self._settings.account['password']
+            self._settings.account.username, self._settings.account.password
         )
 
-        logger.info('Authentication.')
+        logger.info('Authentication...')
 
         self._account.authentication()
         if not self._account.is_authenticated:

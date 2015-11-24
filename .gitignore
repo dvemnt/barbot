@@ -1,6 +1,6 @@
 .git
 *.py[codw]
 __pycache__/
-dist
+dist/
 build/
 barbot.egg-info/

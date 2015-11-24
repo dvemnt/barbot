@@ -8,19 +8,28 @@ import urltools
 from . import constants
 
 
-def config_generator(filename='barbot.conf'):
+def get_configspec():
+    """
+    Return configspec for `configobj.ConfigObj`.
+
+    :returns: `dict` of configspec.
+    """
+    return {
+        'account': {
+            'username': 'string',
+            'password': 'string',
+        },
+    }
+
+
+def create_config(filename='barbot.conf'):
     """
     Create configuration template.
 
     :param filename: path to write configuration.
     """
-    config = configobj.ConfigObj()
-    config.filename = filename
-
-    config['account'] = {}
-    config['account']['username'] = 'YOUR-USERNAME'
-    config['account']['password'] = 'YOUR-PASSWORD'
-
+    config = configobj.ConfigObj(infile=filename)
+    config.update(get_configspec())
     config.write()
 
 
